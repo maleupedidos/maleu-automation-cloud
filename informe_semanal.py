@@ -114,6 +114,8 @@ def procesar(sh, nombre, barrio_key=None):
             "estado": str(get(r, idx, "Estado de Entrega")).strip(),
             "estado_pago": str(get(r, idx, "Estado de Pago")).strip(),
             "facturado": parse_num(get(r, idx, "Facturado")),
+            "costo": parse_num(get(r, idx, "Costo")),
+            "margen": parse_num(get(r, idx, "Margen Bruto")),
             "cliente": str(get(r, idx, "Cliente")).strip(),
             "barrio": str(get(r, idx, barrio_key)).strip() if barrio_key else "",
         })
@@ -125,12 +127,17 @@ def filtrar(rows, ini, fin):
 def resumen(rows):
     entregados = [r for r in rows if r["estado"].lower() == "entregado"]
     fact = sum(r["facturado"] for r in entregados)
+    margen = sum(r["margen"] for r in entregados)
+    costo = sum(r["costo"] for r in entregados)
     sin_cobrar = [r for r in entregados if r["estado_pago"].lower() != "cobrado"]
     return {
         "pedidos": len(rows),
         "entregados": len(entregados),
         "cancelados": len([r for r in rows if r["estado"].lower() == "cancelado"]),
         "facturado": fact,
+        "costo": costo,
+        "margen": margen,
+        "margen_pct": (margen / fact) if fact > 0 else 0,
         "ticket": fact / len(entregados) if entregados else 0,
         "sin_cobrar_monto": sum(r["facturado"] for r in sin_cobrar),
         "sin_cobrar_cant": len(sin_cobrar),
@@ -158,8 +165,16 @@ def generar_informe(semanas_atras=1):
     res_sem = {k: resumen(filtrar(v, lun, dom)) for k, v in canales.items()}
     total_e = sum(r["entregados"] for r in res_sem.values())
     total_f = sum(r["facturado"] for r in res_sem.values())
+    total_m = sum(r["margen"] for r in res_sem.values())
+    total_c = sum(r["costo"] for r in res_sem.values())
+    margen_pct_total = (total_m / total_f) if total_f > 0 else 0
     total_sc = sum(r["sin_cobrar_monto"] for r in res_sem.values())
     total_sc_cant = sum(r["sin_cobrar_cant"] for r in res_sem.values())
+
+    # Margen sem anterior para comparar
+    res_prev = {k: resumen(filtrar(v, lun_prev, dom_prev)) for k, v in canales.items()}
+    m_prev = sum(r["margen"] for r in res_prev.values())
+    pct_m = ((total_m - m_prev) / m_prev * 100) if m_prev else 0
 
     f_prev  = sum(resumen(filtrar(v, lun_prev,  dom_prev ))["facturado"] for v in canales.values())
     e_prev  = sum(resumen(filtrar(v, lun_prev,  dom_prev ))["entregados"] for v in canales.values())
@@ -209,15 +224,18 @@ def generar_informe(semanas_atras=1):
     md.append(f"\n## Resumen\n")
     md.append(f"- Total entregados: **{total_e}** ({pct_e:+.0f}% vs sem ant)")
     md.append(f"- Facturado: **{fmt_money(total_f)}** ({pct_f:+.0f}% vs sem ant)")
+    md.append(f"- **Margen bruto: {fmt_money(total_m)} ({margen_pct_total*100:.1f}%)** ({pct_m:+.0f}% vs sem ant)")
+    md.append(f"- Costo mercadería: {fmt_money(total_c)}")
     md.append(f"- Ticket promedio: {fmt_money(total_f/total_e if total_e else 0)}")
     md.append(f"- Sin cobrar: {fmt_money(total_sc)} ({total_sc_cant} pedidos)")
 
     md.append(f"\n## Ventas por canal\n")
-    md.append("| Canal | Pedidos | Entregados | Facturado | Ticket |")
-    md.append("|---|---|---|---|---|")
+    md.append("| Canal | Pedidos | Entregados | Facturado | Margen $ | Margen % | Ticket |")
+    md.append("|---|---|---|---|---|---|---|")
     for k, r in res_sem.items():
-        md.append(f"| {k} | {r['pedidos']} | {r['entregados']} | {fmt_money(r['facturado'])} | {fmt_money(r['ticket'])} |")
-    md.append(f"| **TOTAL** | — | **{total_e}** | **{fmt_money(total_f)}** | — |")
+        mpct = f"{r['margen_pct']*100:.0f}%" if r['facturado'] > 0 else "—"
+        md.append(f"| {k} | {r['pedidos']} | {r['entregados']} | {fmt_money(r['facturado'])} | {fmt_money(r['margen'])} | {mpct} | {fmt_money(r['ticket'])} |")
+    md.append(f"| **TOTAL** | — | **{total_e}** | **{fmt_money(total_f)}** | **{fmt_money(total_m)}** | **{margen_pct_total*100:.0f}%** | — |")
 
     md.append(f"\n## Tendencia (3 semanas)\n")
     md.append("| Semana | Entregados | Facturado |")
@@ -254,11 +272,13 @@ def generar_informe(semanas_atras=1):
             if c: md.append(f"- {c}")
 
     flecha = "📈" if pct_f >= 0 else "📉"
+    flecha_m = "📈" if pct_m >= 0 else "📉"
     wa_lines = [
         f"📊 Maleu — Sem {sem_num}",
         f"",
         f"{total_e} entregados ({pct_e:+.0f}%)",
         f"{fmt_money(total_f)} facturado ({pct_f:+.0f}%) {flecha}",
+        f"{fmt_money(total_m)} margen ({margen_pct_total*100:.0f}%) ({pct_m:+.0f}%) {flecha_m}",
         f"Ticket: {fmt_money(total_f/total_e if total_e else 0)}",
     ]
     if total_sc_cant:
@@ -278,7 +298,11 @@ def generar_informe(semanas_atras=1):
         "dom": dom.strftime("%Y-%m-%d"),
         "total_entregados": total_e,
         "total_facturado": total_f,
+        "total_margen": total_m,
+        "total_costo": total_c,
+        "margen_pct": margen_pct_total,
         "pct_facturado": pct_f,
+        "pct_margen": pct_m,
         "dormidos_count": len(dormidos),
         "clubes_silentes": list(clubes_silentes),
     }
