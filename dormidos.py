@@ -326,9 +326,119 @@ def main():
 
     print("\n".join(md))
 
+    # ─── HTML (formato bonito para Drive) ───
+    import urllib.parse
+    tibios = [d for d in dormidos if d['categoria']=='TIBIO']
+    frios = [d for d in dormidos if d['categoria']=='FRIO']
+    muyfrios = [d for d in dormidos if d['categoria']=='MUY FRIO']
+
+    def card_dormido(d):
+        nombre = d['nombre']
+        dias = d['dias_desde']
+        extras = []
+        if d['barrio']: extras.append(d['barrio'])
+        if d['subbarrio']: extras.append(d['subbarrio'])
+        ubicacion = " · ".join(extras) if extras else "(sin barrio)"
+        prods = ", ".join(f'{n} ({q})' for n, q in d['productos_top']) if d['productos_top'] else "—"
+        wa_link = ""
+        if d['tel']:
+            txt = urllib.parse.quote(d['draft'])
+            wa_link = f'<a href="https://wa.me/{d["tel"]}?text={txt}" target="_blank" class="wa-btn">💬 Abrir WhatsApp</a>'
+        return f"""<div class="dorm-card cat-{d['categoria'].replace(' ','-').lower()}">
+  <div class="dc-head">
+    <div class="dc-name">{nombre}</div>
+    <div class="dc-dias">{dias}d sin pedir</div>
+  </div>
+  <div class="dc-meta">
+    <span>{d['canal']}</span><span>·</span><span>{ubicacion}</span>
+    {f'<span>·</span><span>{d["tel"]}</span>' if d['tel'] else ''}
+  </div>
+  <div class="dc-stats">
+    <div><b>{d['pedidos']}</b> pedidos</div>
+    <div><b>{fmt_money(d['facturado'])}</b> facturado</div>
+    <div>ticket <b>{fmt_money(d['ticket'])}</b></div>
+    <div>última <b>{d['ultima'].strftime('%d/%m/%Y')}</b></div>
+  </div>
+  <div class="dc-prods"><b>Top productos:</b> {prods}</div>
+  <div class="dc-draft">{d['draft']}</div>
+  {wa_link}
+</div>"""
+
+    def seccion_html(label, emoji, lista, color):
+        if not lista: return ""
+        cards = "\n".join(card_dormido(d) for d in lista)
+        return f"""<div class="cat-section">
+  <h2 class="cat-h" style="border-left-color:{color}">{emoji} {label} <span class="cat-count">{len(lista)}</span></h2>
+  <div class="dorm-grid">{cards}</div>
+</div>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maleu · Dormidos {hoy.strftime('%d/%m/%Y')}</title>
+<style>
+:root {{ --o:#FF7A1A; --bg:#FFFAF5; --ink:#1b1b1b; --ink2:#4b5563; --ink3:#9ca3af; --border:#e5e7eb; }}
+*{{box-sizing:border-box}}
+body{{margin:0;padding:24px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);line-height:1.55;font-size:14px}}
+.wrap{{max-width:1100px;margin:0 auto}}
+.hdr{{background:linear-gradient(135deg,#1b1b1b 0%,#2d2d2d 100%);color:#fff;padding:32px 28px;border-radius:16px;margin-bottom:20px;position:relative;overflow:hidden}}
+.hdr::before{{content:"";position:absolute;top:-50%;right:-10%;width:50%;height:200%;background:radial-gradient(circle,rgba(255,122,26,0.25) 0%,transparent 70%)}}
+.hdr h1{{margin:0 0 6px 0;font-size:28px;font-weight:800;letter-spacing:-.5px}}
+.hdr .subt{{color:#d1d5db;font-size:13px;font-weight:500}}
+.hdr .gen{{color:#9ca3af;font-size:11px;margin-top:8px}}
+.kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}}
+.kpi{{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)}}
+.kpi .lbl{{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--ink3);margin-bottom:8px}}
+.kpi .val{{font-size:28px;font-weight:800;color:var(--ink);line-height:1}}
+.kpi.tibio{{border-left:4px solid #facc15}}
+.kpi.frio{{border-left:4px solid #fb923c}}
+.kpi.muyfrio{{border-left:4px solid #dc2626}}
+.kpi.total{{border-left:4px solid var(--o)}}
+.tip{{background:#fef3c7;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:8px;margin-bottom:20px;font-size:13px}}
+.cat-section{{margin-bottom:32px}}
+.cat-h{{font-size:18px;font-weight:800;padding-left:12px;border-left:4px solid var(--o);margin:0 0 14px 0}}
+.cat-count{{display:inline-block;background:#1b1b1b;color:#fff;padding:2px 9px;border-radius:10px;font-size:12px;margin-left:6px}}
+.dorm-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}}
+.dorm-card{{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);border-left:4px solid #facc15;display:flex;flex-direction:column;gap:8px}}
+.dorm-card.cat-frio{{border-left-color:#fb923c}}
+.dorm-card.cat-muy-frio{{border-left-color:#dc2626}}
+.dc-head{{display:flex;justify-content:space-between;align-items:baseline;gap:8px}}
+.dc-name{{font-weight:800;font-size:15px;color:var(--ink)}}
+.dc-dias{{background:#fef3c7;color:#92400e;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap}}
+.dorm-card.cat-frio .dc-dias{{background:#fed7aa;color:#9a3412}}
+.dorm-card.cat-muy-frio .dc-dias{{background:#fecaca;color:#991b1b}}
+.dc-meta{{font-size:12px;color:var(--ink2);display:flex;gap:6px;flex-wrap:wrap}}
+.dc-meta span{{white-space:nowrap}}
+.dc-stats{{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 12px;font-size:12px;color:var(--ink2);padding:8px;background:#f9fafb;border-radius:8px}}
+.dc-prods{{font-size:12px;color:var(--ink2)}}
+.dc-draft{{background:#FFFAF5;border-left:3px solid var(--o);padding:10px 12px;border-radius:6px;font-size:13px;color:var(--ink);font-style:italic;line-height:1.4}}
+.wa-btn{{display:inline-block;background:#25D366;color:#fff;text-align:center;padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px;margin-top:4px}}
+.wa-btn:hover{{background:#1ebd5a}}
+.foot{{text-align:center;color:var(--ink3);font-size:11px;padding:20px 0}}
+@media (max-width:720px){{ .kpis{{grid-template-columns:repeat(2,1fr)}} .hdr h1{{font-size:22px}} body{{font-size:13px;padding:12px 8px}} .dorm-grid{{grid-template-columns:1fr}} }}
+</style></head>
+<body><div class="wrap">
+  <div class="hdr">
+    <h1>😴 Clientes Dormidos</h1>
+    <div class="subt">Detectados al {hoy.strftime('%d/%m/%Y')}</div>
+    <div class="gen">Generado: {now_ar().strftime('%d/%m/%Y %H:%M')} AR</div>
+  </div>
+  <div class="kpis">
+    <div class="kpi total"><div class="lbl">Total</div><div class="val">{len(dormidos)}</div></div>
+    <div class="kpi tibio"><div class="lbl">🟡 Tibios (21-45d)</div><div class="val">{len(tibios)}</div></div>
+    <div class="kpi frio"><div class="lbl">🟠 Fríos (45-90d)</div><div class="val">{len(frios)}</div></div>
+    <div class="kpi muyfrio"><div class="lbl">🔴 Muy fríos (90-180d)</div><div class="val">{len(muyfrios)}</div></div>
+  </div>
+  <div class="tip">💡 <b>Empezá por los TIBIOS de mayor ticket histórico.</b> Son los que más rápido vuelven y los que más mueven la aguja.</div>
+  {seccion_html("TIBIOS", "🟡", tibios, "#facc15")}
+  {seccion_html("FRÍOS", "🟠", frios, "#fb923c")}
+  {seccion_html("MUY FRÍOS", "🔴", muyfrios, "#dc2626")}
+  <div class="foot">Maleu — Rico y listo en minutos. · Detector de dormidos · Tadeo elige a quién contactar</div>
+</div></body></html>"""
+
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out).write_text("\n".join(md), encoding="utf-8")
+        content = html if args.out.lower().endswith(".html") else "\n".join(md)
+        Path(args.out).write_text(content, encoding="utf-8")
         print(f"\n[OK] Guardado: {args.out}", file=sys.stderr)
 
 if __name__ == "__main__":
