@@ -271,8 +271,320 @@ def generar_informe(semanas_atras=1):
         for c in clubes_silentes:
             if c: md.append(f"- {c}")
 
-    flecha = "📈" if pct_f >= 0 else "📉"
-    flecha_m = "📈" if pct_m >= 0 else "📉"
+    # ─── HTML (formato bonito para Drive) ───
+    def html_card(label, value, sub="", color="#FF7A1A"):
+        sub_html = f'<div class="sub">{sub}</div>' if sub else ""
+        return f'<div class="kpi" style="border-left:4px solid {color}"><div class="lbl">{label}</div><div class="val">{value}</div>{sub_html}</div>'
+
+    def delta_html(pct, kind="fact"):
+        if pct is None: return ""
+        cls = "up" if pct >= 0 else "down"
+        sign = "+" if pct >= 0 else ""
+        return f'<span class="delta {cls}">{sign}{pct:.0f}% vs sem ant</span>'
+
+    canales_html = ""
+    for k, r in res_sem.items():
+        mpct = f"{r['margen_pct']*100:.0f}%" if r['facturado'] > 0 else "—"
+        canales_html += f"""<tr>
+            <td><b>{k}</b></td>
+            <td class="num">{r['pedidos']}</td>
+            <td class="num">{r['entregados']}</td>
+            <td class="num">{fmt_money(r['facturado'])}</td>
+            <td class="num">{fmt_money(r['margen'])}</td>
+            <td class="num">{mpct}</td>
+            <td class="num">{fmt_money(r['ticket'])}</td>
+        </tr>"""
+    canales_html += f"""<tr class="total">
+        <td><b>TOTAL</b></td><td class="num">—</td>
+        <td class="num"><b>{total_e}</b></td>
+        <td class="num"><b>{fmt_money(total_f)}</b></td>
+        <td class="num"><b>{fmt_money(total_m)}</b></td>
+        <td class="num"><b>{margen_pct_total*100:.0f}%</b></td>
+        <td class="num">—</td>
+    </tr>"""
+
+    tendencia_html = f"""
+    <tr><td>Sem -2 ({lun_prev2.strftime('%d/%m')}–{dom_prev2.strftime('%d/%m')})</td><td class="num">{e_prev2}</td><td class="num">{fmt_money(f_prev2)}</td></tr>
+    <tr><td>Sem -1 ({lun_prev.strftime('%d/%m')}–{dom_prev.strftime('%d/%m')})</td><td class="num">{e_prev}</td><td class="num">{fmt_money(f_prev)}</td></tr>
+    <tr class="total"><td><b>Esta sem</b></td><td class="num"><b>{total_e}</b></td><td class="num"><b>{fmt_money(total_f)}</b></td></tr>
+    """
+
+    diaadia_html = ""
+    for d in ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]:
+        if d in por_dia:
+            x = por_dia[d]
+            diaadia_html += f'<tr><td><b>{d}</b></td><td class="num">{x["p"]}</td><td class="num">{fmt_money(x["f"])}</td></tr>'
+
+    clubes_html = ""
+    if clubes_sem:
+        for r in clubes_sem:
+            clubes_html += f'<tr><td>{r["fecha"].strftime("%d/%m")}</td><td><b>{r["barrio"]}</b></td><td>{r["cliente"]}</td><td class="num">{fmt_money(r["facturado"])}</td></tr>'
+    else:
+        clubes_html = '<tr><td colspan="4" style="text-align:center;color:#9ca3af;font-style:italic">Sin pedidos esta semana ⚠️</td></tr>'
+
+    silentes_html = ""
+    if clubes_silentes:
+        silentes_chips = " ".join(f'<span class="chip alert">{c}</span>' for c in clubes_silentes if c)
+        silentes_html = f'<div class="silent-box"><div class="silent-h">⚠️ Clubes silentes (pidieron sem-1, no esta sem)</div>{silentes_chips}<div class="silent-tip">→ Contactalos mañana antes del partido del viernes.</div></div>'
+
+    dormidos_html = ""
+    if dormidos:
+        dorm_list = ""
+        for c in dormidos[:15]:
+            dorm_list += f'<li>{c.title()}</li>'
+        extra = f'<li class="more">...y {len(dormidos)-15} más</li>' if len(dormidos) > 15 else ""
+        dormidos_html = f'<div class="dorm-box"><div class="dorm-h">😴 Dormidos potenciales — {len(dormidos)}</div><ul>{dorm_list}{extra}</ul><div class="dorm-tip">→ Corré <code>/dormidos</code> para drafts WhatsApp.</div></div>'
+
+    flecha_up = "📈"
+    flecha_down = "📉"
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maleu · Informe Sem {sem_num}</title>
+<style>
+:root {{
+  --o: #FF7A1A;
+  --o-dark: #E66800;
+  --bg: #FFFAF5;
+  --ink: #1b1b1b;
+  --ink2: #4b5563;
+  --ink3: #9ca3af;
+  --green: #16a34a;
+  --red: #dc2626;
+  --border: #e5e7eb;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  margin: 0;
+  padding: 24px 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.55;
+  font-size: 14px;
+}}
+.wrap {{ max-width: 880px; margin: 0 auto; }}
+.hdr {{
+  background: linear-gradient(135deg, #1b1b1b 0%, #2d2d2d 100%);
+  color: #fff;
+  padding: 32px 28px;
+  border-radius: 16px;
+  margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
+}}
+.hdr::before {{
+  content: "";
+  position: absolute;
+  top: -50%;
+  right: -10%;
+  width: 50%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,122,26,0.25) 0%, transparent 70%);
+}}
+.hdr h1 {{ margin: 0 0 6px 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }}
+.hdr .subt {{ color: #d1d5db; font-size: 13px; font-weight: 500; }}
+.hdr .gen {{ color: #9ca3af; font-size: 11px; margin-top: 8px; }}
+
+.kpis {{
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}}
+.kpi {{
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}}
+.kpi .lbl {{
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--ink3);
+  margin-bottom: 8px;
+}}
+.kpi .val {{
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.1;
+}}
+.kpi .sub {{ font-size: 11px; color: var(--ink2); margin-top: 4px; font-weight: 600; }}
+.delta {{
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  margin-top: 8px;
+}}
+.delta.up {{ background: #dcfce7; color: #15803d; }}
+.delta.down {{ background: #fee2e2; color: #b91c1c; }}
+
+.card {{
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}}
+.card h2 {{
+  margin: 0 0 4px 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}}
+.card .csub {{
+  font-size: 11px;
+  color: var(--ink3);
+  margin-bottom: 14px;
+}}
+table {{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}}
+table thead th {{
+  background: #f9fafb;
+  color: var(--ink3);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 10px;
+  padding: 10px 8px;
+  text-align: left;
+  border-bottom: 2px solid var(--border);
+}}
+table thead th.num {{ text-align: right; }}
+table tbody td {{
+  padding: 10px 8px;
+  border-bottom: 1px solid #f3f4f6;
+}}
+table tbody td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+table tbody tr.total {{ background: linear-gradient(90deg, #FFF6F0 0%, transparent 100%); }}
+table tbody tr.total td {{ border-top: 2px solid var(--o); font-size: 14px; }}
+
+.silent-box, .dorm-box {{
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-top: 12px;
+}}
+.silent-box {{ background: #fef3c7; border-left: 4px solid #f59e0b; }}
+.dorm-box {{ background: #fce7f3; border-left: 4px solid #db2777; }}
+.silent-h, .dorm-h {{ font-weight: 800; font-size: 13px; margin-bottom: 8px; }}
+.silent-tip, .dorm-tip {{ font-size: 12px; color: var(--ink2); margin-top: 8px; font-style: italic; }}
+.chip {{
+  display: inline-block;
+  background: #fff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 2px 4px 2px 0;
+}}
+.chip.alert {{ color: #9a3412; }}
+.dorm-box ul {{ margin: 0; padding-left: 18px; columns: 2; column-gap: 20px; }}
+.dorm-box li {{ font-size: 12px; padding: 2px 0; }}
+.dorm-box li.more {{ font-style: italic; color: var(--ink2); }}
+.dorm-box code {{ background: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; }}
+
+.foot {{
+  text-align: center;
+  color: var(--ink3);
+  font-size: 11px;
+  padding: 20px 0;
+  margin-top: 10px;
+}}
+
+@media (max-width: 720px) {{
+  .kpis {{ grid-template-columns: repeat(2, 1fr); }}
+  .hdr h1 {{ font-size: 22px; }}
+  body {{ font-size: 13px; padding: 12px 8px; }}
+  .card {{ padding: 14px; }}
+  .dorm-box ul {{ columns: 1; }}
+  table {{ font-size: 11px; }}
+}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <h1>📊 Maleu · Sem {sem_num}</h1>
+    <div class="subt">{lun.strftime('%d/%m')}–{dom.strftime('%d/%m/%Y')}</div>
+    <div class="gen">Generado: {now_ar().strftime('%d/%m/%Y %H:%M')} AR</div>
+  </div>
+
+  <div class="kpis">
+    {html_card("Entregados", str(total_e), delta_html(pct_e), "#FF7A1A")}
+    {html_card("Facturado", fmt_money(total_f), delta_html(pct_f), "#16a34a")}
+    {html_card("Margen bruto", fmt_money(total_m), f'{margen_pct_total*100:.0f}% · {"+" if pct_m>=0 else ""}{pct_m:.0f}% vs sem ant', "#a855f7")}
+    {html_card("Ticket prom.", fmt_money(total_f/total_e if total_e else 0), f"{total_sc_cant} sin cobrar" if total_sc_cant else "Todo cobrado ✓", "#f59e0b")}
+  </div>
+
+  <div class="card">
+    <h2>📈 Ventas por canal</h2>
+    <div class="csub">Cómo se reparte la facturación de la semana</div>
+    <table>
+      <thead><tr><th>Canal</th><th class="num">Ped.</th><th class="num">Entreg.</th><th class="num">Facturado</th><th class="num">Margen $</th><th class="num">Margen %</th><th class="num">Ticket</th></tr></thead>
+      <tbody>{canales_html}</tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>📅 Tendencia (3 semanas)</h2>
+    <div class="csub">Comparativa para ver si venís subiendo o bajando</div>
+    <table>
+      <thead><tr><th>Semana</th><th class="num">Entregados</th><th class="num">Facturado</th></tr></thead>
+      <tbody>{tendencia_html}</tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>🏠 Home — día a día</h2>
+    <div class="csub">Para ver qué días vienen fuertes</div>
+    <table>
+      <thead><tr><th>Día</th><th class="num">Pedidos</th><th class="num">Facturado</th></tr></thead>
+      <tbody>{diaadia_html if diaadia_html else '<tr><td colspan="3" style="text-align:center;color:#9ca3af">Sin entregas Home esta semana</td></tr>'}</tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>👥 Clientes</h2>
+    <div class="csub">Adquisición vs retención</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div style="background:#dcfce7;border-radius:10px;padding:14px"><div style="font-size:10px;font-weight:800;color:#166534;letter-spacing:.5px">NUEVOS</div><div style="font-size:24px;font-weight:800;color:#166534">{len(nuevos)}</div></div>
+      <div style="background:#dbeafe;border-radius:10px;padding:14px"><div style="font-size:10px;font-weight:800;color:#1e40af;letter-spacing:.5px">REPETIDORES</div><div style="font-size:24px;font-weight:800;color:#1e40af">{len(repetidores)}</div></div>
+    </div>
+    {dormidos_html}
+  </div>
+
+  <div class="card">
+    <h2>⚽ Clubes</h2>
+    <div class="csub">Pedidos del canal Clubes esta semana</div>
+    <table>
+      <thead><tr><th>Fecha</th><th>Club</th><th>Cliente</th><th class="num">Facturado</th></tr></thead>
+      <tbody>{clubes_html}</tbody>
+    </table>
+    {silentes_html}
+  </div>
+
+  <div class="foot">
+    Maleu — Rico y listo en minutos. · Informe generado por Claude Code
+  </div>
+
+</div>
+</body>
+</html>"""
+
+    flecha = flecha_up if pct_f >= 0 else flecha_down
+    flecha_m = flecha_up if pct_m >= 0 else flecha_down
     wa_lines = [
         f"📊 Maleu — Sem {sem_num}",
         f"",
@@ -292,6 +604,7 @@ def generar_informe(semanas_atras=1):
 
     return {
         "md": "\n".join(md),
+        "html": html,
         "wa": "\n".join(wa_lines),
         "sem_num": sem_num,
         "lun": lun.strftime("%Y-%m-%d"),
@@ -329,5 +642,7 @@ if __name__ == "__main__":
 
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out).write_text(info["md"], encoding="utf-8")
+        # Si --out termina en .html, escribir HTML; si no, MD
+        content = info["html"] if args.out.lower().endswith(".html") else info["md"]
+        Path(args.out).write_text(content, encoding="utf-8")
         print(f"\n[OK] Guardado: {args.out}", file=sys.stderr)
